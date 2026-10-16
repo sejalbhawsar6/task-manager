@@ -2,8 +2,11 @@
 
 A simple, clean task manager where each user can sign up, log in and manage their own tasks.
 
-**Live app:** _add your Netlify link here_
-**API:** _add your Render link here_
+- **Live app:** https://taskly-sejal.netlify.app
+- **API:** https://task-manager-api-rhy9.onrender.com (health check: `/api/health`)
+- **Source code:** https://github.com/sejalbhawsar6/task-manager
+
+> **Note:** The backend runs on Render's free plan. If the app has not been used for a while, the first request can take up to a minute while the server wakes up. The app shows a "waking up" message during this time.
 
 ## Features
 
@@ -72,6 +75,12 @@ cp .env.example .env      # VITE_API_URL=http://localhost:5000/api
 npm run dev               # http://localhost:5173
 ```
 
+## Deployment
+
+- **Database:** MongoDB Atlas (free M0 cluster).
+- **Backend:** Render web service with root directory `backend`, build command `npm install`, start command `npm start`. Environment variables: `MONGO_URI`, `JWT_SECRET`, `JWT_EXPIRES_IN`, `CLIENT_URL`.
+- **Frontend:** Netlify. `VITE_API_URL` is set in `frontend/.env.production`, and `public/_redirects` makes page refreshes work with React Router.
+
 ## API
 
 All task routes need the header `Authorization: Bearer <token>`.
@@ -100,6 +109,10 @@ All task routes need the header `Authorization: Bearer <token>`.
 2. **Drag-and-drop Kanban board.** Nice to have, but the list view with status filters covers the same need with less complexity.
 3. **Email reminders for due dates.** Needs a scheduler and an email service; overdue highlights in the app cover the basic need.
 
-## Known limitation
+## Limitation I would fix with one more day
 
-The backend runs on Render's free plan, which sleeps after inactivity, so the first request can take up to a minute (the app shows a "waking up" message). There are also no automated tests or pagination yet. With one more day I would add API tests (Jest + Supertest) and pagination for large task lists.
+**No pagination.** The API returns all of a user's tasks in one request. This is fine for a personal list, but it would get slow for a user with thousands of tasks. With one more day I would add page-based pagination to `GET /api/tasks` (with `page` and `limit`), show "Load more" in the UI, and add API tests (Jest + Supertest) to cover it.
+
+## Author
+
+Sejal Bhawsar · sejalbhawsar24@gmail.com
