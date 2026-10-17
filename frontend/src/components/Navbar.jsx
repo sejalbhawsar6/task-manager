@@ -21,7 +21,9 @@ export default function Navbar() {
         <Logo />
         <div className="navbar-actions">
           <button className="icon-btn" type="button" onClick={toggle} aria-label="Toggle dark mode" title="Toggle theme">
-            {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
+            <span key={theme} className="theme-icon">
+              {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
+            </span>
           </button>
           <div className="user-chip" title={user?.email}>
             <span className="avatar">{initials(user?.name)}</span>

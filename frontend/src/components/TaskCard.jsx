@@ -4,12 +4,17 @@ import { dueState, formatDue } from '../utils/date';
 const PRIORITY_LABEL = { high: 'High', medium: 'Medium', low: 'Low' };
 const DUE_LABEL = { overdue: 'Overdue', today: 'Due today' };
 
-export default function TaskCard({ task, busy, onToggleDone, onStatusChange, onEdit, onDelete }) {
+export default function TaskCard({ task, index = 0, busy, leaving, celebrating, onToggleDone, onStatusChange, onEdit, onDelete }) {
   const done = task.status === 'done';
   const due = dueState(task);
 
   return (
-    <article className={`task-card priority-${task.priority}${done ? ' is-done' : ''}${busy ? ' is-busy' : ''}`}>
+    <article
+      className={`task-card priority-${task.priority}${done ? ' is-done' : ''}${busy ? ' is-busy' : ''}${
+        leaving ? ' is-leaving' : ''
+      }${celebrating ? ' just-done' : ''}`}
+      style={{ '--i': index }}
+    >
       <button
         type="button"
         className={`check${done ? ' checked' : ''}`}

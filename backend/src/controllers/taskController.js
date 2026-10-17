@@ -5,8 +5,6 @@ const HttpError = require('../utils/httpError');
 
 const { STATUSES, PRIORITIES } = Task;
 const EDITABLE_FIELDS = ['title', 'description', 'status', 'priority', 'dueDate'];
-const PRIORITY_RANK = { high: 0, medium: 1, low: 2 };
-
 const escapeRegex = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 const pickFields = (body = {}) => {
@@ -25,9 +23,21 @@ const findOwnTask = async (id, userId) => {
   return task;
 };
 
-// GET /api/tasks?status=&priority=&search=&sort=newest|oldest|due|priority
+// Sort orders run inside MongoDB, so they also work with pagination.
+const SORT_STAGES = {
+  newest: { createdAt: -1, _id: -1 },
+  oldest: { createdAt: 1, _id: 1 },
+  due: { noDue: 1, dueDate: 1, createdAt: -1, _id: -1 }, // tasks without a due date go last
+  priority: { priorityRank: 1, createdAt: -1, _id: -1 }, // high -> medium -> low
+};
+
+const HELPER_FIELDS = { priorityRank: 0, noDue: 0 };
+
+// GET /api/tasks?status=&priority=&search=&sort=newest|oldest|due|priority&page=1&limit=10
+// The client can send ?offset=N instead of ?page (used by "Load more").
+// Without ?page or ?offset the API returns every task (old behaviour), so older clients keep working.
 const getTasks = asyncHandler(async (req, res) => {
-  const { status, priority, search, sort = 'newest' } = req.query;
+  const { status, priority, search, sort = 'newest', page, limit, offset } = req.query;
   const filter = { user: req.user._id };
 
   if (status && STATUSES.includes(status)) filter.status = status;
@@ -37,22 +47,52 @@ const getTasks = asyncHandler(async (req, res) => {
     filter.$or = [{ title: rx }, { description: rx }];
   }
 
-  const sortMap = {
-    newest: { createdAt: -1 },
-    oldest: { createdAt: 1 },
-    due: { dueDate: 1, createdAt: -1 },
-  };
+  const pipeline = [
+    { $match: filter },
+    {
+      $addFields: {
+        priorityRank: {
+          $switch: {
+            branches: [
+              { case: { $eq: ['$priority', 'high'] }, then: 0 },
+              { case: { $eq: ['$priority', 'medium'] }, then: 1 },
+            ],
+            default: 2,
+          },
+        },
+        noDue: { $cond: [{ $ifNull: ['$dueDate', false] }, 0, 1] },
+      },
+    },
+    { $sort: SORT_STAGES[sort] || SORT_STAGES.newest },
+  ];
 
-  let tasks = await Task.find(filter).sort(sortMap[sort] || sortMap.newest).lean();
-
-  if (sort === 'due') {
-    // Tasks without a due date go to the end.
-    tasks = [...tasks.filter((t) => t.dueDate), ...tasks.filter((t) => !t.dueDate)];
-  } else if (sort === 'priority') {
-    tasks.sort((a, b) => PRIORITY_RANK[a.priority] - PRIORITY_RANK[b.priority]);
+  if (page === undefined && offset === undefined) {
+    const tasks = await Task.aggregate([...pipeline, { $project: HELPER_FIELDS }]);
+    return res.json({ tasks });
   }
 
-  res.json({ tasks });
+  const limitNum = Math.min(Math.max(parseInt(limit, 10) || 10, 1), 50);
+  const pageNum = Math.max(parseInt(page, 10) || 1, 1);
+  const skip = offset !== undefined ? Math.max(parseInt(offset, 10) || 0, 0) : (pageNum - 1) * limitNum;
+
+  const [result] = await Task.aggregate([
+    ...pipeline,
+    {
+      $facet: {
+        tasks: [{ $skip: skip }, { $limit: limitNum }, { $project: HELPER_FIELDS }],
+        total: [{ $count: 'count' }],
+      },
+    },
+  ]);
+
+  const total = result.total[0]?.count || 0;
+  res.json({
+    tasks: result.tasks,
+    page: Math.floor(skip / limitNum) + 1,
+    limit: limitNum,
+    total,
+    hasMore: skip + result.tasks.length < total,
+  });
 });
 
 // GET /api/tasks/stats?today=YYYY-MM-DD

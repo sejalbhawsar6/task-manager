@@ -1,4 +1,5 @@
 import { CircleCheck, Clock, ListTodo, TriangleAlert, LayoutGrid } from 'lucide-react';
+import useCountUp from '../hooks/useCountUp';
 
 const CARDS = [
   { key: 'total', label: 'All tasks', icon: LayoutGrid, filter: 'all', tone: 'indigo' },
@@ -8,13 +9,23 @@ const CARDS = [
   { key: 'overdue', label: 'Overdue', icon: TriangleAlert, filter: null, tone: 'red' },
 ];
 
+function AnimatedNumber({ value, suffix = '' }) {
+  const display = useCountUp(value);
+  return (
+    <>
+      {display}
+      {suffix}
+    </>
+  );
+}
+
 export default function StatsCards({ stats, activeStatus, onSelect }) {
   const percent = stats.total ? Math.round((stats.done / stats.total) * 100) : 0;
 
   return (
     <section className="stats">
       <div className="stats-grid">
-        {CARDS.map(({ key, label, icon: Icon, filter, tone }) => {
+        {CARDS.map(({ key, label, icon: Icon, filter, tone }, i) => {
           const clickable = filter !== null;
           const active = clickable && activeStatus === filter;
           return (
@@ -22,11 +33,12 @@ export default function StatsCards({ stats, activeStatus, onSelect }) {
               key={key}
               type="button"
               className={`stat-card tone-${tone}${active ? ' active' : ''}`}
+              style={{ '--i': i }}
               onClick={clickable ? () => onSelect(filter) : undefined}
               disabled={!clickable}
             >
               <span className="stat-icon"><Icon size={18} /></span>
-              <span className="stat-value">{stats[key] ?? 0}</span>
+              <span className="stat-value"><AnimatedNumber value={stats[key] ?? 0} /></span>
               <span className="stat-label">{label}</span>
             </button>
           );
@@ -35,7 +47,7 @@ export default function StatsCards({ stats, activeStatus, onSelect }) {
       <div className="progress-card">
         <div className="progress-head">
           <span>Overall progress</span>
-          <strong>{percent}%</strong>
+          <strong><AnimatedNumber value={percent} suffix="%" /></strong>
         </div>
         <div className="progress-track" role="progressbar" aria-valuenow={percent} aria-valuemin={0} aria-valuemax={100}>
           <div className="progress-fill" style={{ width: `${percent}%` }} />

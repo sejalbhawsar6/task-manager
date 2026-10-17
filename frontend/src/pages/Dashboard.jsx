@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Plus, RefreshCw } from 'lucide-react';
+import { ChevronDown, LoaderCircle, Plus, RefreshCw } from 'lucide-react';
 import Navbar from '../components/Navbar';
 import StatsCards from '../components/StatsCards';
 import Toolbar from '../components/Toolbar';
@@ -15,6 +15,8 @@ import useDebounce from '../hooks/useDebounce';
 import useSlowHint from '../hooks/useSlowHint';
 import { todayKey } from '../utils/date';
 
+const PAGE_SIZE = 10;
+const LEAVE_MS = 300;
 const DEFAULT_FILTERS = { status: 'all', priority: 'all', search: '', sort: 'newest' };
 const EMPTY_STATS = { total: 0, todo: 0, 'in-progress': 0, done: 0, overdue: 0 };
 
@@ -25,16 +27,28 @@ const greeting = () => {
   return 'Good evening';
 };
 
+const withId = (set, id) => new Set(set).add(id);
+const withoutId = (set, id) => {
+  const next = new Set(set);
+  next.delete(id);
+  return next;
+};
+
 export default function Dashboard() {
   const { user } = useAuth();
   const toast = useToast();
 
   const [tasks, setTasks] = useState([]);
+  const [total, setTotal] = useState(0);
+  const [hasMore, setHasMore] = useState(false);
   const [stats, setStats] = useState(EMPTY_STATS);
   const [filters, setFilters] = useState(DEFAULT_FILTERS);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState('');
   const [busyIds, setBusyIds] = useState(() => new Set());
+  const [leavingIds, setLeavingIds] = useState(() => new Set());
+  const [celebrateIds, setCelebrateIds] = useState(() => new Set());
   const [modal, setModal] = useState(null); // { task } or { task: null } for create
   const [toDelete, setToDelete] = useState(null);
 
@@ -45,23 +59,54 @@ export default function Dashboard() {
   const isFiltered =
     filters.status !== 'all' || filters.priority !== 'all' || filters.search.trim() !== '';
 
+  const buildParams = useCallback(
+    (offset) => {
+      const params = { sort: filters.sort, offset, limit: PAGE_SIZE };
+      if (filters.status !== 'all') params.status = filters.status;
+      if (filters.priority !== 'all') params.priority = filters.priority;
+      if (search.trim()) params.search = search.trim();
+      return params;
+    },
+    [filters.status, filters.priority, filters.sort, search]
+  );
+
+  // Loads the first page. Any older request still in flight is ignored.
   const loadTasks = useCallback(async () => {
     const id = ++requestId.current;
     setLoading(true);
     setError('');
     try {
-      const params = { sort: filters.sort };
-      if (filters.status !== 'all') params.status = filters.status;
-      if (filters.priority !== 'all') params.priority = filters.priority;
-      if (search.trim()) params.search = search.trim();
-      const { data } = await api.get('/tasks', { params });
-      if (id === requestId.current) setTasks(data.tasks);
+      const { data } = await api.get('/tasks', { params: buildParams(0) });
+      if (id !== requestId.current) return;
+      setTasks(data.tasks);
+      setTotal(data.total);
+      setHasMore(data.hasMore);
     } catch (err) {
       if (id === requestId.current) setError(getErrorMessage(err));
     } finally {
       if (id === requestId.current) setLoading(false);
     }
-  }, [filters.status, filters.priority, filters.sort, search]);
+  }, [buildParams]);
+
+  const loadMore = async () => {
+    if (loadingMore || !hasMore) return;
+    const id = requestId.current;
+    setLoadingMore(true);
+    try {
+      const { data } = await api.get('/tasks', { params: buildParams(tasks.length) });
+      if (id !== requestId.current) return; // filters changed meanwhile
+      setTasks((list) => {
+        const seen = new Set(list.map((t) => t._id));
+        return [...list, ...data.tasks.filter((t) => !seen.has(t._id))];
+      });
+      setTotal(data.total);
+      setHasMore(data.hasMore);
+    } catch (err) {
+      toast.error(getErrorMessage(err));
+    } finally {
+      setLoadingMore(false);
+    }
+  };
 
   const loadStats = useCallback(async () => {
     try {
@@ -83,25 +128,49 @@ export default function Dashboard() {
   const refresh = () => Promise.all([loadTasks(), loadStats()]);
   const updateFilters = (patch) => setFilters((f) => ({ ...f, ...patch }));
 
-  const setBusy = (id, on) =>
-    setBusyIds((prev) => {
-      const next = new Set(prev);
-      if (on) next.add(id);
-      else next.delete(id);
-      return next;
+  const matchesFilters = (task) =>
+    (filters.status === 'all' || task.status === filters.status) &&
+    (filters.priority === 'all' || task.priority === filters.priority);
+
+  const setBusy = (id, on) => setBusyIds((prev) => (on ? withId(prev, id) : withoutId(prev, id)));
+
+  const celebrate = (id) => {
+    setCelebrateIds((prev) => withId(prev, id));
+    setTimeout(() => setCelebrateIds((prev) => withoutId(prev, id)), 900);
+  };
+
+  // Plays the exit animation, then removes the card from the list.
+  const animateOut = (id) =>
+    new Promise((resolve) => {
+      setLeavingIds((prev) => withId(prev, id));
+      setTimeout(() => {
+        setTasks((list) => list.filter((t) => t._id !== id));
+        setLeavingIds((prev) => withoutId(prev, id));
+        setTotal((t) => Math.max(t - 1, 0));
+        resolve();
+      }, LEAVE_MS);
     });
 
   const saveTask = async (payload) => {
+    const editing = modal.task;
     try {
-      if (modal.task) {
-        await api.put(`/tasks/${modal.task._id}`, payload);
+      if (editing) {
+        const { data } = await api.put(`/tasks/${editing._id}`, payload);
         toast.success('Task updated');
+        setModal(null);
+        if (data.task.status === 'done' && editing.status !== 'done') celebrate(data.task._id);
+        if (matchesFilters(data.task)) {
+          setTasks((list) => list.map((t) => (t._id === data.task._id ? data.task : t)));
+        } else {
+          animateOut(data.task._id);
+        }
       } else {
         await api.post('/tasks', payload);
         toast.success('Task created');
+        setModal(null);
+        loadTasks();
       }
-      setModal(null);
-      refresh();
+      loadStats();
     } catch (err) {
       throw new Error(getErrorMessage(err));
     }
@@ -113,10 +182,16 @@ export default function Dashboard() {
     setBusy(task._id, true);
     // Optimistic update so the UI feels instant.
     setTasks((list) => list.map((t) => (t._id === task._id ? { ...t, status } : t)));
+    if (status === 'done') celebrate(task._id);
     try {
-      await api.put(`/tasks/${task._id}`, { status });
+      const { data } = await api.put(`/tasks/${task._id}`, { status });
       if (status === 'done') toast.success('Nice! Task completed');
-      refresh();
+      if (matchesFilters(data.task)) {
+        setTasks((list) => list.map((t) => (t._id === task._id ? data.task : t)));
+      } else {
+        animateOut(task._id);
+      }
+      loadStats();
     } catch (err) {
       setTasks((list) => list.map((t) => (t._id === task._id ? { ...t, status: previous } : t)));
       toast.error(getErrorMessage(err));
@@ -126,17 +201,20 @@ export default function Dashboard() {
   };
 
   const confirmDelete = async () => {
+    const target = toDelete;
     try {
-      await api.delete(`/tasks/${toDelete._id}`);
+      await api.delete(`/tasks/${target._id}`);
       toast.success('Task deleted');
       setToDelete(null);
-      refresh();
+      await animateOut(target._id);
+      loadStats();
     } catch (err) {
       toast.error(getErrorMessage(err));
     }
   };
 
   const firstName = user?.name?.split(' ')[0] || 'there';
+  const openCount = stats.total - stats.done;
 
   return (
     <div className="app-shell">
@@ -145,14 +223,14 @@ export default function Dashboard() {
       <main className="container dashboard">
         <div className="page-head">
           <div>
-            <h1>{greeting()}, {firstName} 👋</h1>
+            <h1>{greeting()}, {firstName} <span className="wave">👋</span></h1>
             <p className="muted">
               {stats.total === 0
                 ? 'Let’s plan something today.'
-                : `You have ${stats.total - stats.done} open task${stats.total - stats.done === 1 ? '' : 's'}${stats.overdue ? `, ${stats.overdue} overdue` : ''}.`}
+                : `You have ${openCount} open task${openCount === 1 ? '' : 's'}${stats.overdue ? `, ${stats.overdue} overdue` : ''}.`}
             </p>
           </div>
-          <button type="button" className="btn btn-primary" onClick={() => setModal({ task: null })}>
+          <button type="button" className="btn btn-primary btn-shine" onClick={() => setModal({ task: null })}>
             <Plus size={18} /> New task
           </button>
         </div>
@@ -182,11 +260,14 @@ export default function Dashboard() {
               onClear={() => setFilters(DEFAULT_FILTERS)}
             />
           ) : (
-            tasks.map((task) => (
+            tasks.map((task, index) => (
               <TaskCard
                 key={task._id}
                 task={task}
+                index={index % PAGE_SIZE}
                 busy={busyIds.has(task._id)}
+                leaving={leavingIds.has(task._id)}
+                celebrating={celebrateIds.has(task._id)}
                 onToggleDone={(t) => changeStatus(t, t.status === 'done' ? 'todo' : 'done')}
                 onStatusChange={changeStatus}
                 onEdit={(t) => setModal({ task: t })}
@@ -195,6 +276,22 @@ export default function Dashboard() {
             ))
           )}
         </section>
+
+        {!error && tasks.length > 0 && (
+          <div className="list-footer">
+            <span className="muted">
+              Showing {tasks.length} of {total} task{total === 1 ? '' : 's'}
+            </span>
+            {hasMore ? (
+              <button type="button" className="btn btn-ghost btn-load-more" onClick={loadMore} disabled={loadingMore}>
+                {loadingMore ? <LoaderCircle className="spin" size={16} /> : <ChevronDown size={16} />}
+                {loadingMore ? 'Loading…' : 'Load more'}
+              </button>
+            ) : (
+              total > PAGE_SIZE && <span className="muted end-note">You’ve reached the end 🎉</span>
+            )}
+          </div>
+        )}
       </main>
 
       {modal && <TaskModal task={modal.task} onClose={() => setModal(null)} onSave={saveTask} />}

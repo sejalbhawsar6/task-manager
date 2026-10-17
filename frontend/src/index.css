@@ -694,8 +694,9 @@ textarea::placeholder {
   border: 1px solid var(--border);
   border-radius: var(--radius);
   box-shadow: var(--shadow-sm);
-  transition: box-shadow 0.15s, transform 0.15s, opacity 0.15s;
-  animation: rise 0.25s ease both;
+  transition: box-shadow 0.2s, transform 0.2s, opacity 0.15s, border-color 0.2s;
+  animation: rise 0.45s cubic-bezier(0.2, 0.8, 0.2, 1) backwards;
+  animation-delay: calc(var(--i, 0) * 45ms);
 }
 .task-card::before {
   content: '';
@@ -712,6 +713,8 @@ textarea::placeholder {
 .task-card.priority-low::before { background: var(--green); }
 .task-card:hover {
   box-shadow: var(--shadow);
+  transform: translateY(-2px);
+  border-color: color-mix(in srgb, var(--primary) 30%, var(--border));
 }
 .task-card.is-busy {
   opacity: 0.7;
@@ -719,7 +722,7 @@ textarea::placeholder {
 @keyframes rise {
   from {
     opacity: 0;
-    transform: translateY(6px);
+    transform: translateY(14px) scale(0.98);
   }
 }
 
@@ -1053,5 +1056,230 @@ textarea::placeholder {
   }
   .toast {
     max-width: none;
+  }
+}
+
+/* ---------- Animations ---------- */
+
+/* Page and card entrances */
+.page-head {
+  animation: fade-up 0.5s cubic-bezier(0.2, 0.8, 0.2, 1) backwards;
+}
+.stat-card {
+  animation: rise 0.5s cubic-bezier(0.2, 0.8, 0.2, 1) backwards;
+  animation-delay: calc(var(--i, 0) * 60ms + 80ms);
+}
+.progress-card {
+  animation: fade-up 0.5s cubic-bezier(0.2, 0.8, 0.2, 1) 0.35s backwards;
+}
+.toolbar {
+  animation: fade-up 0.5s cubic-bezier(0.2, 0.8, 0.2, 1) 0.42s backwards;
+}
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+}
+
+/* Waving hand in the greeting */
+.wave {
+  display: inline-block;
+  transform-origin: 70% 70%;
+  animation: wave 2.2s ease-in-out 0.6s 2;
+}
+@keyframes wave {
+  0%, 60%, 100% { transform: rotate(0deg); }
+  10%, 30% { transform: rotate(14deg); }
+  20% { transform: rotate(-8deg); }
+  40% { transform: rotate(-4deg); }
+  50% { transform: rotate(10deg); }
+}
+
+/* Stat icons bounce slightly on hover */
+.stat-card:not(:disabled):hover .stat-icon {
+  animation: bounce 0.5s ease;
+}
+@keyframes bounce {
+  40% { transform: translateY(-4px) scale(1.08); }
+  70% { transform: translateY(1px); }
+}
+
+/* Moving shine on the progress bar */
+.progress-fill {
+  position: relative;
+  overflow: hidden;
+  transition: width 0.8s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.progress-fill::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.45), transparent);
+  transform: translateX(-100%);
+  animation: shine 2.4s ease-in-out infinite;
+}
+@keyframes shine {
+  60%, 100% { transform: translateX(100%); }
+}
+
+/* Shine sweep on the primary button */
+.btn-shine {
+  position: relative;
+  overflow: hidden;
+}
+.btn-shine::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -60%;
+  width: 40%;
+  height: 100%;
+  background: linear-gradient(120deg, transparent, rgba(255, 255, 255, 0.35), transparent);
+  transform: skewX(-20deg);
+  transition: left 0.6s ease;
+}
+.btn-shine:hover::after {
+  left: 130%;
+}
+.btn-primary:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+/* Checkbox pop when a task is completed */
+.check.checked {
+  animation: check-pop 0.35s cubic-bezier(0.3, 1.6, 0.5, 1);
+}
+.check.checked svg {
+  animation: check-draw 0.3s ease 0.05s backwards;
+}
+@keyframes check-pop {
+  0% { transform: scale(0.7); }
+  100% { transform: scale(1); }
+}
+@keyframes check-draw {
+  from {
+    opacity: 0;
+    transform: scale(0.4) rotate(-20deg);
+  }
+}
+
+/* Green glow pulse when a task is completed */
+.task-card.just-done {
+  animation: celebrate 0.9s ease-out;
+}
+@keyframes celebrate {
+  0% { box-shadow: 0 0 0 0 rgba(22, 163, 74, 0.45); }
+  100% { box-shadow: 0 0 0 16px rgba(22, 163, 74, 0); }
+}
+
+/* Card slides out and collapses when deleted or filtered out */
+.task-card.is-leaving {
+  pointer-events: none;
+  overflow: hidden;
+  animation: leave 0.3s ease-in forwards;
+}
+@keyframes leave {
+  0% {
+    opacity: 1;
+    transform: none;
+    max-height: 260px;
+  }
+  55% {
+    opacity: 0;
+    transform: translateX(40px);
+    max-height: 260px;
+  }
+  100% {
+    opacity: 0;
+    transform: translateX(40px);
+    max-height: 0;
+    padding-top: 0;
+    padding-bottom: 0;
+    margin-top: -10px;
+    border-width: 0;
+  }
+}
+
+/* Theme icon spins in when toggled */
+.theme-icon {
+  display: grid;
+  place-items: center;
+  animation: spin-in 0.4s cubic-bezier(0.3, 1.4, 0.5, 1);
+}
+@keyframes spin-in {
+  from {
+    opacity: 0;
+    transform: rotate(-120deg) scale(0.5);
+  }
+}
+
+/* Empty state icon floats gently */
+.empty-icon {
+  animation: float 3s ease-in-out infinite;
+}
+@keyframes float {
+  50% { transform: translateY(-6px); }
+}
+
+/* Toasts slide in from the right */
+.toast {
+  animation: toast-in 0.35s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateX(40px);
+  }
+}
+
+/* Auth pages */
+.auth-card {
+  animation: fade-up 0.6s cubic-bezier(0.2, 0.8, 0.2, 1) backwards;
+}
+.auth-brand-body h2,
+.auth-brand-body p,
+.auth-brand-body li {
+  animation: fade-up 0.6s cubic-bezier(0.2, 0.8, 0.2, 1) backwards;
+}
+.auth-brand-body p { animation-delay: 0.1s; }
+.auth-brand-body li:nth-child(1) { animation-delay: 0.2s; }
+.auth-brand-body li:nth-child(2) { animation-delay: 0.3s; }
+.auth-brand-body li:nth-child(3) { animation-delay: 0.4s; }
+.auth-blob-1 {
+  animation: drift 9s ease-in-out infinite;
+}
+.auth-blob-2 {
+  animation: drift 11s ease-in-out infinite reverse;
+}
+@keyframes drift {
+  50% { transform: translate(-24px, 28px) scale(1.06); }
+}
+
+/* Load more footer */
+.list-footer {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  margin-top: 18px;
+  font-size: 14px;
+}
+.btn-load-more {
+  min-width: 160px;
+}
+.end-note {
+  animation: fade-up 0.4s ease backwards;
+}
+
+/* Respect users who prefer less motion */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    animation-delay: 0ms !important;
+    transition-duration: 0.01ms !important;
   }
 }
